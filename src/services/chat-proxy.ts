@@ -76,7 +76,7 @@ export function createProxyPayload(
   parsed: Exclude<ParsedRequest, { error: string }>,
 ): ProxyPayload {
   return {
-    context: DEFAULT_CONTEXT,
+    context: [],
     model: parsed.upstreamModel,
     id: parsed.requestId,
     messages: injectPrompt(

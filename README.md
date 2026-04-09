@@ -1,3 +1,5 @@
+> 由于 pointer 对接口增加了人机验证(x-is-human，x-kpsdk-* 等)，虽然那可以通过 puppeteer、playwright 等工具来模拟，但是可用的模型也降级到了只能使用 Claude 3.5 Sonnet ，所以这个项目也就没有意义了。
+
 # pointer-help-chat-proxy
 
 一个基于 `Fastify + TypeScript` 的兼容层服务，用统一的上游 `/api/chat` SSE 接口，对外模拟多套常见大模型 API。

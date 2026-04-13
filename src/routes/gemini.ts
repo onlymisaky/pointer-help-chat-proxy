@@ -78,7 +78,7 @@ function parseGeminiBody(
   const messages: ProxyMessage[] = []
   const systemText = extractGeminiInstructionText(payload.systemInstruction)
   if (systemText) {
-    messages.push(createProxyMessage('user', systemText))
+    messages.push(createProxyMessage('system', systemText))
   }
 
   messages.push(...extractGeminiMessages(payload.contents))

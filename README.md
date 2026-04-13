@@ -243,13 +243,13 @@ POST /v1beta/models/:model:streamGenerateContent
 
 - `contents`
 - `systemInstruction`
-- `generationConfig`
 
 当前只保证纯文本输入场景可用：
 
 - 仅支持 `:generateContent` 和 `:streamGenerateContent` 两个动作
 - `contents[].parts` 适合传文本 part，非文本 part 不保证兼容
 - `systemInstruction` 只适合传可提取为文本的简单结构，并会进入统一消息流处理
+- `generationConfig` 当前不会参与上游请求构造，可视为暂不支持
 - 流式输出只实现最小文本增量，不保证与 Gemini 官方完整流式响应结构完全一致
 - 示例仅适用于基础问答，不适用于多模态、工具调用或严格依赖官方字段的 SDK
 
@@ -332,30 +332,46 @@ src/
 ## 已知限制
 
 - 当前只支持文本主路径，不是完整官方 API 的全量实现
-- OpenAI 风格接口只覆盖基础文本子集，不保证与官方 schema 完全一致
-- `system`、`developer`、`tool`、`function` 等非基础消息角色不保证按 OpenAI 原语义完整保留
-- 非文本 `content` / `input`，例如图片、音频、工具调用相关结构，不保证兼容，可能被忽略或被转成纯文本
-- `/v1/responses` 的 SSE 流只覆盖最小文本事件子集，不保证包含官方完整事件序列和全部字段
-- 返回体只覆盖基础文本响应字段，不保证满足严格 schema 校验客户端的全部字段要求
-- 错误对象为简化版本，不保证与官方错误类型、错误码和字段完全一致
-- `model` 会映射到固定上游模型，不能把这里的行为视为对应官方模型的真实行为
-- Claude Messages 接口只覆盖基础文本子集，不是 Claude 官方协议的完整实现
-- Claude 的 `system` 会转为统一消息流中的文本输入，不保证保留原始 system 指令语义
-- Claude 的 `messages[].role` 不保证完整保留所有角色语义；除 `assistant` 外的其他角色会按普通用户输入处理
-- Claude 的非文本内容块不保证兼容，可能被忽略或转成纯文本
-- Claude 的流式输出仅适用于基础文本增量展示，不保证与官方 SSE 事件序列完全一致
-- Gemini 接口只覆盖文本主路径，不是 Gemini 官方 API 的完整实现
-- Gemini 仅支持 `generateContent` 和 `streamGenerateContent` 两个动作
-- Gemini 的 `contents[].parts` 中非文本内容不保证兼容，可能被忽略
-- Gemini 的 `systemInstruction` 会被转成普通文本消息处理，不保证保留官方 system 指令语义
-- Gemini 的流式输出仅提供基础文本增量，不保证与官方完整流式响应结构完全一致
-- Gemini 返回体只覆盖 `candidates` / `usageMetadata` 的基础字段，不保证满足严格 schema 校验客户端的全部要求
+- OpenAI `POST /v1/chat/completions`
+  - 只覆盖基础文本对话子集，不是 Chat Completions 官方协议的完整实现
+  - `messages[].content` 只按可归一化为文本的内容处理；图片、音频、工具调用等非文本结构不保证兼容
+  - `messages[].role` 统一只保留 `system`、`assistant`、`user`；其它 role 会转换为 `user`
+  - 当输入消息里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
+  - 流式输出只覆盖基础文本增量，不保证与官方 SSE 事件序列和字段完全一致
+  - 返回体和错误对象为兼容层最小实现，不保证满足严格依赖官方 schema 的客户端
+- OpenAI `POST /v1/responses`
+  - 只覆盖基础文本输入输出子集，不是 Responses 官方协议的完整实现
+  - `input` 只支持字符串或可提取为文本的简单消息结构；非文本输入、工具调用、多模态相关结构不保证兼容
+  - 输入消息中的 role 统一只保留 `system`、`assistant`、`user`；其它 role 会转换为 `user`
+  - 当输入消息里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
+  - SSE 流只实现最小文本事件子集，不保证包含官方完整事件序列、状态字段和全部输出类型
+  - 返回体和错误对象为兼容层最小实现，不保证满足严格依赖官方 schema 的客户端
+- Claude `POST /v1/messages`
+  - 只覆盖基础文本消息子集，不是 Claude Messages 官方协议的完整实现
+  - 顶层 `system` 会被提取为统一消息流中的 `system` 消息；这里不会完整保留 Claude 官方 system 指令语义
+  - `messages[].content` 只按可归一化为文本的内容处理；非文本内容块不保证兼容
+  - `messages[].role` 统一只保留 `system`、`assistant`、`user`；除这三种外的其它 role 会转换为 `user`
+  - 当统一消息流里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
+  - 流式输出仅适用于基础文本增量展示，不保证与 Claude 官方 SSE 事件序列和全部字段完全一致
+- Gemini `POST /v1beta/models/:model:generateContent`
+  - 只覆盖基础文本非流式调用，不是 Gemini 官方 API 的完整实现
+  - 仅支持文本 `parts`；`contents[].parts` 中非文本内容不保证兼容
+  - `contents[].role` 中 `model` 和 `assistant` 会统一映射为 `assistant`，`system` 保留为 `system`，其它 role 会转换为 `user`
+  - `systemInstruction` 会被提取为统一消息流中的 `system` 消息；这里不会完整保留 Gemini 官方 system 指令语义
+  - 当统一消息流里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
+  - `generationConfig` 当前不会参与上游请求构造，可视为暂不支持
+  - 返回体只覆盖 `candidates` / `usageMetadata` 的基础字段，不保证满足严格 schema 校验客户端的全部要求
+- Gemini `POST /v1beta/models/:model:streamGenerateContent`
+  - 只覆盖基础文本流式调用，不是 Gemini 官方流式协议的完整实现
+  - 输入侧限制与 `generateContent` 相同：仅支持文本 `parts`，role 会按统一规则归一化
+  - `generationConfig` 当前不会参与上游请求构造，可视为暂不支持
+  - 流式输出只提供基础文本增量和结束结果，不保证与 Gemini 官方完整流式响应结构完全一致
+- 所有接口中的 `model` 都会映射到固定上游模型，不能把这里的行为视为对应官方模型的真实行为
 - 不做代理鉴权
 - 浏览器桥接本身只做本机监听，不适合直接暴露到局域网或公网
 - 不代理多模态输入输出
 - 上游 URL 固定写死，不支持通过配置切换
 - `tsconfig.json` 只编译 `src/**/*.ts`
-- 这个项目没有测试代码
 
 ## 故障排查
 

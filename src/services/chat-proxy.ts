@@ -61,11 +61,7 @@ export function createProxyPayload(
     context: DEFAULT_CONTEXT,
     model: parsed.upstreamModel,
     id: parsed.requestId,
-    messages: injectPrompt(
-      parsed.upstreamModel,
-      parsed.messages,
-      parsed.headers,
-    ),
+    messages: injectPrompt(parsed.messages),
     trigger: 'submit-message',
   }
 }

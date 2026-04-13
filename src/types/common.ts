@@ -59,7 +59,6 @@ export interface GeminiContent {
 export interface GeminiRequest {
   contents?: GeminiContent[]
   systemInstruction?: unknown
-  generationConfig?: JsonRecord
 }
 
 export interface GeminiRouteParams {
@@ -85,7 +84,7 @@ export interface ThirdPartyUsage {
 
 export interface ProxyMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   parts: Array<{
     type: 'text'
     text: string

@@ -53,12 +53,18 @@ export function normalizeProxyUsage(
   return usage as ThirdPartyUsage
 }
 
-export function mapRole(role: string | undefined): 'user' | 'assistant' {
-  return role === 'assistant' ? 'assistant' : 'user'
+export function mapRole(role: string | undefined): 'user' | 'assistant' | 'system' {
+  if (role === 'system') {
+    return 'system'
+  }
+  if (role === 'assistant') {
+    return 'assistant'
+  }
+  return 'user'
 }
 
 export function createProxyMessage(
-  role: 'user' | 'assistant',
+  role: 'user' | 'assistant' | 'system',
   text: string,
   usage?: ThirdPartyUsage,
 ): ProxyMessage {
@@ -101,10 +107,6 @@ export function summarizeProxyMessagesText(messages: ProxyMessage[]) {
     })
     .filter(Boolean)
     .join('\n\n')
-}
-
-export function hasAssistantMessage(messages: ProxyMessage[]) {
-  return messages.some(message => message.role === 'assistant')
 }
 
 export function extractResponseInputMessages(input: unknown): ProxyMessage[] {
@@ -171,7 +173,7 @@ export function extractGeminiMessages(contents: unknown): ProxyMessage[] {
     const role
       = item?.role === 'model' || item?.role === 'assistant'
         ? 'assistant'
-        : 'user'
+        : mapRole(item?.role)
 
     messages.push(createProxyMessage(role, text))
   }

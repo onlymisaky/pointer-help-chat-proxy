@@ -46,7 +46,7 @@ function parseClaudeBody(body: unknown, headers: unknown): ParsedRequest {
   const systemText = normalizeMessageContent(payload.system)
 
   if (systemText) {
-    messages.push(createProxyMessage('user', systemText))
+    messages.push(createProxyMessage('system', systemText))
   }
 
   for (const message of payload.messages) {

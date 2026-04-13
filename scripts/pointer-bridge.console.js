@@ -7,7 +7,14 @@
   let socket = null
 
   function log(...args) {
-    console.log('[pointer-bridge]', ...args)
+    const timestamp = new Date().toLocaleString()
+    const prefix = `[${timestamp}] [pointer-bridge]`
+    console.log(
+      `%c${prefix}%c`,
+      'color: hotpink;font-weight: bold;',
+      '',
+      ...args,
+    )
   }
 
   function sendMessage(payload) {

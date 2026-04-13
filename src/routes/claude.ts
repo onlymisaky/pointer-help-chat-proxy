@@ -6,7 +6,12 @@ import type {
   ThirdPartyUsage,
 } from '../types/common.js'
 import { randomUUID } from 'node:crypto'
-import { collectUpstreamResult, postToProxy, resolveModel } from '../services/chat-proxy.js'
+import {
+  collectUpstreamResult,
+  ensureSuccessfulUpstreamResponse,
+  postToProxy,
+  resolveModel,
+} from '../services/chat-proxy.js'
 import {
   logRequestBefore,
   logResponseAfter,
@@ -19,7 +24,11 @@ import {
   normalizeMessageContent,
   normalizeProxyUsage,
 } from '../utils/message.js'
-import { mapFinishReason, sendClaudeError } from '../utils/response.js'
+import {
+  createClaudeErrorPayload,
+  mapFinishReason,
+  sendClaudeError,
+} from '../utils/response.js'
 import { readSseEvents, setupSse, writeSse } from '../utils/sse.js'
 
 function parseClaudeBody(body: unknown, headers: unknown): ParsedRequest {
@@ -77,6 +86,7 @@ async function streamClaude(
   let usage: ThirdPartyUsage | undefined
   let text = ''
   let finishReason = 'end_turn'
+  let completed = false
 
   writeSse(
     reply,
@@ -99,76 +109,89 @@ async function streamClaude(
     'message_start',
   )
 
-  for await (const event of readSseEvents(
-    response.body as ReadableStream<Uint8Array>,
-  )) {
-    if (event === 'done') {
-      break
-    }
+  try {
+    const body = await ensureSuccessfulUpstreamResponse(response)
 
-    if (event.type === 'text-start') {
-      writeSse(
-        reply,
-        {
-          type: 'content_block_start',
-          index: 0,
-          content_block: {
-            type: 'text',
-            text: '',
+    for await (const event of readSseEvents(body)) {
+      if (event === 'done') {
+        break
+      }
+
+      if (event.type === 'text-start') {
+        writeSse(
+          reply,
+          {
+            type: 'content_block_start',
+            index: 0,
+            content_block: {
+              type: 'text',
+              text: '',
+            },
           },
-        },
-        'content_block_start',
-      )
-      continue
-    }
+          'content_block_start',
+        )
+        continue
+      }
 
-    if (event.type === 'text-delta') {
-      text += event.delta
-      writeSse(
-        reply,
-        {
-          type: 'content_block_delta',
-          index: 0,
-          delta: {
-            type: 'text_delta',
-            text: event.delta,
+      if (event.type === 'text-delta') {
+        text += event.delta
+        writeSse(
+          reply,
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'text_delta',
+              text: event.delta,
+            },
           },
+          'content_block_delta',
+        )
+        continue
+      }
+
+      if (event.type === 'text-end') {
+        writeSse(reply, { type: 'content_block_stop', index: 0 }, 'content_block_stop')
+        continue
+      }
+
+      if (event.type === 'finish') {
+        usage = event.messageMetadata?.usage
+        finishReason
+          = mapFinishReason(event.finishReason) === 'stop'
+            ? 'end_turn'
+            : mapFinishReason(event.finishReason)
+      }
+    }
+
+    writeSse(
+      reply,
+      {
+        type: 'message_delta',
+        delta: {
+          stop_reason: finishReason,
+          stop_sequence: null,
         },
-        'content_block_delta',
-      )
-      continue
-    }
-
-    if (event.type === 'text-end') {
-      writeSse(reply, { type: 'content_block_stop', index: 0 }, 'content_block_stop')
-      continue
-    }
-
-    if (event.type === 'finish') {
-      usage = event.messageMetadata?.usage
-      finishReason
-        = mapFinishReason(event.finishReason) === 'stop'
-          ? 'end_turn'
-          : mapFinishReason(event.finishReason)
-    }
+        usage: {
+          output_tokens: usage?.outputTokens ?? 0,
+        },
+      },
+      'message_delta',
+    )
+    writeSse(reply, { type: 'message_stop' }, 'message_stop')
+    completed = true
+  }
+  catch (error) {
+    reply.log.error(error)
+    const message = error instanceof Error ? error.message : 'proxy request failed'
+    writeSse(reply, createClaudeErrorPayload(message), 'error')
   }
 
-  writeSse(
-    reply,
-    {
-      type: 'message_delta',
-      delta: {
-        stop_reason: finishReason,
-        stop_sequence: null,
-      },
-      usage: {
-        output_tokens: usage?.outputTokens ?? 0,
-      },
-    },
-    'message_delta',
-  )
-  writeSse(reply, { type: 'message_stop' }, 'message_stop')
   reply.raw.end()
+
+  if (!completed) {
+    return
+  }
 
   const upstreamResult = {
     text,

@@ -8,6 +8,7 @@ import type {
 import { randomUUID } from 'node:crypto'
 import {
   collectUpstreamResult,
+  ensureSuccessfulUpstreamResponse,
   postToProxy,
   resolveModel,
 } from '../services/chat-proxy.js'
@@ -23,6 +24,7 @@ import {
   latestUserText,
 } from '../utils/message.js'
 import {
+  createGeminiErrorPayload,
   mapGeminiFinishReason,
   mapGeminiUsageMetadata,
   sendGeminiError,
@@ -106,50 +108,64 @@ async function streamGemini(
   let text = ''
   let finishReason = 'STOP'
   let usageMetadata = mapGeminiUsageMetadata()
+  let completed = false
 
-  for await (const event of readSseEvents(
-    response.body as ReadableStream<Uint8Array>,
-  )) {
-    if (event === 'done') {
-      break
-    }
+  try {
+    const body = await ensureSuccessfulUpstreamResponse(response)
 
-    if (event.type === 'text-delta') {
-      text += event.delta
-      writeSse(reply, {
-        candidates: [
-          {
-            index: 0,
-            content: {
-              role: 'model',
-              parts: [{ text: event.delta }],
+    for await (const event of readSseEvents(body)) {
+      if (event === 'done') {
+        break
+      }
+
+      if (event.type === 'text-delta') {
+        text += event.delta
+        writeSse(reply, {
+          candidates: [
+            {
+              index: 0,
+              content: {
+                role: 'model',
+                parts: [{ text: event.delta }],
+              },
             },
-          },
-        ],
-      })
-      continue
+          ],
+        })
+        continue
+      }
+
+      if (event.type === 'finish') {
+        finishReason = mapGeminiFinishReason(event.finishReason)
+        usageMetadata = mapGeminiUsageMetadata(event.messageMetadata?.usage)
+      }
     }
 
-    if (event.type === 'finish') {
-      finishReason = mapGeminiFinishReason(event.finishReason)
-      usageMetadata = mapGeminiUsageMetadata(event.messageMetadata?.usage)
-    }
+    writeSse(reply, {
+      candidates: [
+        {
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [{ text }],
+          },
+          finishReason,
+        },
+      ],
+      usageMetadata,
+    })
+    completed = true
+  }
+  catch (error) {
+    reply.log.error(error)
+    const message = error instanceof Error ? error.message : 'proxy request failed'
+    writeSse(reply, createGeminiErrorPayload(message, 502), 'error')
   }
 
-  writeSse(reply, {
-    candidates: [
-      {
-        index: 0,
-        content: {
-          role: 'model',
-          parts: [{ text }],
-        },
-        finishReason,
-      },
-    ],
-    usageMetadata,
-  })
   reply.raw.end()
+
+  if (!completed) {
+    return
+  }
 
   const upstreamResult = {
     text,
@@ -279,11 +295,7 @@ export async function handleGeminiStreamGenerateContent(
   }
   catch (error) {
     request.log.error(error)
-    return sendGeminiError(
-      reply,
-      error instanceof Error ? error.message : 'proxy request failed',
-      502,
-    )
+    return reply
   }
 }
 

@@ -5,7 +5,12 @@ import type {
   ProxyMessage,
 } from '../types/common.js'
 import { randomUUID } from 'node:crypto'
-import { collectUpstreamResult, postToProxy, resolveModel } from '../services/chat-proxy.js'
+import {
+  collectUpstreamResult,
+  ensureSuccessfulUpstreamResponse,
+  postToProxy,
+  resolveModel,
+} from '../services/chat-proxy.js'
 import {
   logRequestBefore,
   logResponseAfter,
@@ -18,7 +23,12 @@ import {
   normalizeMessageContent,
   normalizeProxyUsage,
 } from '../utils/message.js'
-import { mapUsage, sendOpenAIError, unixTimestamp } from '../utils/response.js'
+import {
+  createOpenAIErrorPayload,
+  mapUsage,
+  sendOpenAIError,
+  unixTimestamp,
+} from '../utils/response.js'
 import { readSseEvents, setupSse, writeSse } from '../utils/sse.js'
 
 function parseOpenAIChatBody(body: unknown, headers: unknown): ParsedRequest {
@@ -71,78 +81,92 @@ async function streamOpenAIChat(
   let text = ''
   let finishReason = 'stop'
   let usage = mapUsage()
+  let completed = false
 
-  for await (const event of readSseEvents(
-    response.body as ReadableStream<Uint8Array>,
-  )) {
-    if (event === 'done') {
-      break
-    }
+  try {
+    const body = await ensureSuccessfulUpstreamResponse(response)
 
-    if (event.type === 'text-start' && !roleSent) {
-      roleSent = true
-      writeSse(reply, {
-        id,
-        object: 'chat.completion.chunk',
-        created,
-        model: parsed.requestedModel,
-        choices: [
-          {
-            index: 0,
-            delta: {
-              role: 'assistant',
-              content: '',
+    for await (const event of readSseEvents(body)) {
+      if (event === 'done') {
+        break
+      }
+
+      if (event.type === 'text-start' && !roleSent) {
+        roleSent = true
+        writeSse(reply, {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: parsed.requestedModel,
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: 'assistant',
+                content: '',
+              },
+              finish_reason: null,
             },
-            finish_reason: null,
-          },
-        ],
-      })
-      continue
-    }
+          ],
+        })
+        continue
+      }
 
-    if (event.type === 'text-delta') {
-      text += event.delta
-      writeSse(reply, {
-        id,
-        object: 'chat.completion.chunk',
-        created,
-        model: parsed.requestedModel,
-        choices: [
-          {
-            index: 0,
-            delta: {
-              content: event.delta,
+      if (event.type === 'text-delta') {
+        text += event.delta
+        writeSse(reply, {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: parsed.requestedModel,
+          choices: [
+            {
+              index: 0,
+              delta: {
+                content: event.delta,
+              },
+              finish_reason: null,
             },
-            finish_reason: null,
-          },
-        ],
-      })
-      continue
+          ],
+        })
+        continue
+      }
+
+      if (event.type === 'finish') {
+        finishReason = event.finishReason && event.finishReason !== 'unknown'
+          ? event.finishReason
+          : 'stop'
+        usage = mapUsage(event.messageMetadata?.usage)
+      }
     }
 
-    if (event.type === 'finish') {
-      finishReason = event.finishReason && event.finishReason !== 'unknown'
-        ? event.finishReason
-        : 'stop'
-      usage = mapUsage(event.messageMetadata?.usage)
-    }
+    writeSse(reply, {
+      id,
+      object: 'chat.completion.chunk',
+      created,
+      model: parsed.requestedModel,
+      choices: [
+        {
+          index: 0,
+          delta: {},
+          finish_reason: finishReason,
+        },
+      ],
+    })
+    completed = true
+  }
+  catch (error) {
+    reply.log.error(error)
+    const message = error instanceof Error ? error.message : 'proxy request failed'
+    writeSse(reply, createOpenAIErrorPayload(message), 'error')
   }
 
-  writeSse(reply, {
-    id,
-    object: 'chat.completion.chunk',
-    created,
-    model: parsed.requestedModel,
-    choices: [
-      {
-        index: 0,
-        delta: {},
-        finish_reason: finishReason,
-      },
-    ],
-  })
   reply.raw.write('data: [DONE]\n\n')
   reply.raw.end()
+
+  if (!completed) {
+    return
+  }
 
   const upstreamResult = {
     text,

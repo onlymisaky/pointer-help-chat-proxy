@@ -4,7 +4,12 @@ import type {
   ParsedRequest,
 } from '../types/common.js'
 import { randomUUID } from 'node:crypto'
-import { collectUpstreamResult, postToProxy, resolveModel } from '../services/chat-proxy.js'
+import {
+  collectUpstreamResult,
+  ensureSuccessfulUpstreamResponse,
+  postToProxy,
+  resolveModel,
+} from '../services/chat-proxy.js'
 import {
   logRequestBefore,
   logResponseAfter,
@@ -14,7 +19,12 @@ import {
   extractResponseInputMessages,
   latestUserText,
 } from '../utils/message.js'
-import { mapUsage, sendOpenAIError, unixTimestamp } from '../utils/response.js'
+import {
+  createOpenAIErrorPayload,
+  mapUsage,
+  sendOpenAIError,
+  unixTimestamp,
+} from '../utils/response.js'
 import { readSseEvents, setupSse, writeSse } from '../utils/sse.js'
 
 function parseOpenAIResponsesBody(
@@ -59,6 +69,7 @@ async function streamOpenAIResponses(
   let text = ''
   let finishReason = 'stop'
   let usage = mapUsage()
+  let completed = false
 
   writeSse(reply, {
     type: 'response.created',
@@ -72,68 +83,81 @@ async function streamOpenAIResponses(
     },
   })
 
-  for await (const event of readSseEvents(
-    response.body as ReadableStream<Uint8Array>,
-  )) {
-    if (event === 'done') {
-      break
+  try {
+    const body = await ensureSuccessfulUpstreamResponse(response)
+
+    for await (const event of readSseEvents(body)) {
+      if (event === 'done') {
+        break
+      }
+
+      if (event.type === 'text-delta') {
+        text += event.delta
+        writeSse(reply, {
+          type: 'response.output_text.delta',
+          item_id: itemId,
+          output_index: 0,
+          content_index: 0,
+          delta: event.delta,
+        })
+        continue
+      }
+
+      if (event.type === 'finish') {
+        finishReason
+          = event.finishReason && event.finishReason !== 'unknown'
+            ? event.finishReason
+            : 'stop'
+        usage = mapUsage(event.messageMetadata?.usage)
+      }
     }
 
-    if (event.type === 'text-delta') {
-      text += event.delta
-      writeSse(reply, {
-        type: 'response.output_text.delta',
-        item_id: itemId,
-        output_index: 0,
-        content_index: 0,
-        delta: event.delta,
-      })
-      continue
-    }
-
-    if (event.type === 'finish') {
-      finishReason
-        = event.finishReason && event.finishReason !== 'unknown'
-          ? event.finishReason
-          : 'stop'
-      usage = mapUsage(event.messageMetadata?.usage)
-    }
+    writeSse(reply, {
+      type: 'response.output_text.done',
+      item_id: itemId,
+      output_index: 0,
+      content_index: 0,
+      text,
+    })
+    writeSse(reply, {
+      type: 'response.completed',
+      response: {
+        id: responseId,
+        object: 'response',
+        created_at: unixTimestamp(),
+        status: 'completed',
+        model: parsed.requestedModel,
+        output: [
+          {
+            id: itemId,
+            type: 'message',
+            status: 'completed',
+            role: 'assistant',
+            content: [
+              {
+                type: 'output_text',
+                text,
+                annotations: [],
+              },
+            ],
+          },
+        ],
+        finish_reason: finishReason,
+      },
+    })
+    completed = true
+  }
+  catch (error) {
+    reply.log.error(error)
+    const message = error instanceof Error ? error.message : 'proxy request failed'
+    writeSse(reply, createOpenAIErrorPayload(message), 'error')
   }
 
-  writeSse(reply, {
-    type: 'response.output_text.done',
-    item_id: itemId,
-    output_index: 0,
-    content_index: 0,
-    text,
-  })
-  writeSse(reply, {
-    type: 'response.completed',
-    response: {
-      id: responseId,
-      object: 'response',
-      created_at: unixTimestamp(),
-      status: 'completed',
-      model: parsed.requestedModel,
-      output: [
-        {
-          id: itemId,
-          type: 'message',
-          status: 'completed',
-          role: 'assistant',
-          content: [
-            {
-              type: 'output_text',
-              text,
-              annotations: [],
-            },
-          ],
-        },
-      ],
-      finish_reason: finishReason,
-    },
-  })
   reply.raw.end()
+
+  if (!completed) {
+    return
+  }
 
   const upstreamResult = {
     text,

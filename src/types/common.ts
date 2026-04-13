@@ -131,3 +131,54 @@ export interface UpstreamResult {
   finishReason: string
   usage?: ThirdPartyUsage
 }
+
+export interface BridgeClientHello {
+  type: 'hello'
+  token: string
+  pageUrl: string
+}
+
+export interface BridgeProxyRequest {
+  type: 'proxy_request'
+  requestId: string
+  url: string
+  method: 'POST'
+  headers: Record<string, string>
+  body: string
+}
+
+export interface BridgeProxyResponseHead {
+  type: 'proxy_response_head'
+  requestId: string
+  status: number
+  statusText: string
+  url: string
+  headers: Record<string, string>
+}
+
+export interface BridgeProxyResponseChunk {
+  type: 'proxy_response_chunk'
+  requestId: string
+  chunk: string
+  encoding: 'base64'
+}
+
+export interface BridgeProxyError {
+  type: 'proxy_error'
+  requestId: string
+  message: string
+  status?: number
+  details?: string
+}
+
+export interface BridgeProxyComplete {
+  type: 'proxy_complete'
+  requestId: string
+}
+
+export type BridgeIncomingMessage
+  = | BridgeClientHello
+    | BridgeProxyResponseHead
+    | BridgeProxyResponseChunk
+    | BridgeProxyError
+    | BridgeProxyComplete

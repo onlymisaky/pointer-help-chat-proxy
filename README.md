@@ -1,8 +1,10 @@
-> 由于 pointer 对接口增加了人机验证(x-is-human，x-kpsdk-* 等)，虽然那可以通过 puppeteer、playwright 等工具来模拟，但是可用的模型也降级到了只能使用 Claude 3.5 Sonnet ，所以这个项目也就没有意义了。
+> ~~由于 pointer 对接口增加了人机验证(x-is-human，x-kpsdk-* 等)，虽然那可以通过 puppeteer、playwright 等工具来模拟，但是可用的模型也降级到了只能使用 Claude 3.5 Sonnet ，所以这个项目也就没有意义了。~~
+
+> 不想放弃这个项目，便尝试使用 `playwright` 模拟人机验证，但是失败了。Claude 3.5 Sonnet 也挺好用的😊，不想放弃这个项目，所以想到了“浏览器控制台脚本 + WebSocket 桥接”的方案，复用浏览器内已通过验证的页面环境来发起上游请求。
 
 # pointer-help-chat-proxy
 
-一个基于 `Fastify + TypeScript` 的兼容层服务，用统一的上游 `/api/chat` SSE 接口，对外提供多套常见大模型 API 的基础文本兼容。
+一个基于 `Fastify + TypeScript` 的兼容层服务，通过本地 WebSocket 与浏览器控制台脚本通信，在浏览器中发起上游 `/api/chat` 请求，对外提供多套常见大模型 API 的基础文本兼容。
 
 当前已支持：
 
@@ -12,7 +14,7 @@
 - Gemini `POST /v1beta/models/:modelAction`
 - 健康检查 `GET /health`
 
-这个项目的核心目标是“让基础纯文本调用可以接入统一上游”，不是直连官方模型服务，也不是 OpenAI / Claude / Gemini 官方协议的完整实现。所有请求最终都会转发到固定上游：`https://cursor.com/api/chat`
+这个项目的核心目标是“让基础纯文本调用可以接入统一上游”，不是直连官方模型服务，也不是 OpenAI / Claude / Gemini 官方协议的完整实现。所有请求最终都会由浏览器页面转发到固定上游：`https://cursor.com/api/chat`
 
 如果你需要的是严格的官方 API 等价行为，这个项目并不适合。它当前只覆盖最常见的文本问答场景。
 
@@ -22,6 +24,7 @@
 - 提供 OpenAI、Claude、Gemini 三套常见文本接口的最小兼容层
 - 支持基础文本场景下的非流式 JSON 和 SSE 流式输出
 - 内置协议转换，自动把上游 SSE 事件映射为目标平台的基础文本格式
+- 通过浏览器桥接模式，复用 `cursor.com/cn/help` 页面中的登录态与人机验证状态
 - 统一彩色日志，便于查看转换前后请求与响应
 - 已接入 `@antfu/eslint-config`
 
@@ -35,6 +38,25 @@
 ```bash
 npm install
 ```
+
+## 浏览器桥接架构
+
+请求链路：
+
+```text
+client -> pointer-help-chat-proxy -> WebSocket -> console script@cursor.com/cn/help -> /api/chat
+                                                           |
+                                                           -> 响应头+原始 chunk 回传 -> proxy -> client
+```
+
+桥接约束：
+
+- 只支持单浏览器单会话
+- WebSocket 仅监听 `127.0.0.1`
+- 仅支持在 `https://cursor.com/cn/help` 页面中注入控制台脚本
+- 仍然只保证基础纯文本场景
+
+控制台脚本示例文件位于 [scripts/pointer-bridge.console.js](./scripts/pointer-bridge.console.js)
 
 ## 运行
 
@@ -68,6 +90,23 @@ npm run lint:fix
 - `HOST=0.0.0.0`
 - `PORT=3000`
 
+## 控制台脚本使用方式
+
+1. 启动本服务。
+2. 打开并保持 `https://cursor.com/cn/help` 页面已登录。
+3. 打开聊天窗，发送任意一条消息。
+4. 打开浏览器开发者工具控制台。
+5. 将 [scripts/pointer-bridge.console.js](./scripts/pointer-bridge.console.js) 内容粘贴到控制台。
+6. 把脚本内的 `WS_URL` 和 `BRIDGE_TOKEN` 改成与你本地服务一致的值后执行。
+7. 访问 `GET /health`，确认服务已启动。
+
+控制台脚本连接成功后，服务端会优先使用桥接请求；否则会回退到服务端直连 `fetch`。浏览器会把真实响应头和原始 body chunk 回传给服务端，由服务端自行解析 SSE 并保留流式效果。
+
+注意：
+
+- 页面刷新后脚本会失效，需要重新执行。
+- 如果标签页被挂起或关闭，桥接连接会中断。
+
 ## 接口列表
 
 ### Health
@@ -79,7 +118,9 @@ GET /health
 返回：
 
 ```bash
-{"ok":true}
+{
+  "ok": true
+}
 ```
 
 ### OpenAI Chat Completions
@@ -310,10 +351,20 @@ src/
 - Gemini 的流式输出仅提供基础文本增量，不保证与官方完整流式响应结构完全一致
 - Gemini 返回体只覆盖 `candidates` / `usageMetadata` 的基础字段，不保证满足严格 schema 校验客户端的全部要求
 - 不做代理鉴权
+- 浏览器桥接本身只做本机监听，不适合直接暴露到局域网或公网
 - 不代理多模态输入输出
 - 上游 URL 固定写死，不支持通过配置切换
 - `tsconfig.json` 只编译 `src/**/*.ts`
 - 这个项目没有测试代码
+
+## 故障排查
+
+- `browser bridge is not connected`
+  说明服务端还没有收到控制台脚本的 `hello` 握手。检查 `cursor.com/cn/help` 页面是否打开、脚本是否已执行、`WS_URL` 与 `BROWSER_BRIDGE_PORT` 是否一致。
+- `another browser client is already active`
+  第一版只允许一个浏览器客户端连接。
+- 请求超时
+  检查浏览器标签页是否被挂起、刷新，或 `cursor.com/api/chat` 是否卡住。
 
 ## 适用场景
 

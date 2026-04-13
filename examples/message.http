@@ -1,0 +1,16 @@
+POST http://localhost:3000/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
+    {
+      "role": "user",
+      "content": "你是什么模型？哪个版本？数据截止时间？"
+    }
+  ],
+  "stream": true
+}
+
+# GET http://localhost:3000/v1/health
+# Content-Type: application/json

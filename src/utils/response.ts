@@ -55,14 +55,7 @@ export function sendOpenAIError(
   message: string,
   statusCode = 400,
 ) {
-  return reply.code(statusCode).send({
-    error: {
-      message,
-      type: 'invalid_request_error',
-      param: null,
-      code: null,
-    },
-  })
+  return reply.code(statusCode).send(createOpenAIErrorPayload(message))
 }
 
 export function sendClaudeError(
@@ -70,13 +63,7 @@ export function sendClaudeError(
   message: string,
   statusCode = 400,
 ) {
-  return reply.code(statusCode).send({
-    type: 'error',
-    error: {
-      type: 'invalid_request_error',
-      message,
-    },
-  })
+  return reply.code(statusCode).send(createClaudeErrorPayload(message))
 }
 
 export function sendGeminiError(
@@ -84,11 +71,36 @@ export function sendGeminiError(
   message: string,
   statusCode = 400,
 ) {
-  return reply.code(statusCode).send({
+  return reply.code(statusCode).send(createGeminiErrorPayload(message, statusCode))
+}
+
+export function createOpenAIErrorPayload(message: string) {
+  return {
+    error: {
+      message,
+      type: 'invalid_request_error',
+      param: null,
+      code: null,
+    },
+  }
+}
+
+export function createClaudeErrorPayload(message: string) {
+  return {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message,
+    },
+  }
+}
+
+export function createGeminiErrorPayload(message: string, statusCode = 400) {
+  return {
     error: {
       code: statusCode,
       message,
       status: statusCode >= 500 ? 'INTERNAL' : 'INVALID_ARGUMENT',
     },
-  })
+  }
 }

@@ -4,7 +4,6 @@ import type {
   SupportedUpstreamModel,
   UpstreamResult,
 } from '../types/common.js'
-import { loadProxyHeaders } from '../utils/env.js'
 import { logRequestAfter, logResponseBefore } from '../utils/log.js'
 import { latestUserText } from '../utils/message.js'
 import { injectPrompt } from '../utils/prompt.js'
@@ -29,25 +28,6 @@ const GEMINI_MODEL_RE = /google|gemini/
 
 function buildProxyHeaders() {
   return {
-    'accept': '*/*',
-    'accept-language':
-      'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-    'cache-control': 'no-cache',
-    'content-type': 'application/json',
-    'pragma': 'no-cache',
-    'priority': 'u=1, i',
-    'sec-ch-ua':
-      '"Chromium";v="146", "Not-A.Brand";v="24", "Microsoft Edge";v="146"',
-    'sec-ch-ua-arch': '"arm"',
-    'sec-ch-ua-bitness': '"64"',
-    'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': '"macOS"',
-    'sec-ch-ua-platform-version': '"14.6.1"',
-    'sec-fetch-dest': 'empty',
-    'sec-fetch-mode': 'cors',
-    'sec-fetch-site': 'same-origin',
-    'Referer': 'https://cursor.com/help',
-    ...loadProxyHeaders(),
   }
 }
 
@@ -76,7 +56,7 @@ export function createProxyPayload(
   parsed: Exclude<ParsedRequest, { error: string }>,
 ): ProxyPayload {
   return {
-    context: [],
+    context: DEFAULT_CONTEXT,
     model: parsed.upstreamModel,
     id: parsed.requestId,
     messages: injectPrompt(

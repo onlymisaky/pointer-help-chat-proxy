@@ -1,6 +1,8 @@
 > ~~由于 pointer 对接口增加了人机验证(x-is-human，x-kpsdk-* 等)，虽然那可以通过 puppeteer、playwright 等工具来模拟，但是可用的模型也降级到了只能使用 Claude 3.5 Sonnet ，所以这个项目也就没有意义了。~~
 
-> 不想放弃这个项目，便尝试使用 `playwright` 模拟人机验证，但是失败了。Claude 3.5 Sonnet 也挺好用的😊，不想放弃这个项目，所以想到了“浏览器控制台脚本 + WebSocket 桥接”的方案，复用浏览器内已通过验证的页面环境来发起上游请求。
+> ~~尝试使用 `playwright` ，但还是失败了。~~
+
+> Claude 3.5 Sonnet 也挺好用的，不想放弃这个项目，突发奇想，用“浏览器控制台脚本 + WebSocket 桥接”的方案，复用浏览器内已通过验证的页面环境来发起上游请求。
 
 # pointer-help-chat-proxy
 
@@ -13,6 +15,7 @@
 - Claude `POST /v1/messages`
 - Gemini `POST /v1beta/models/:modelAction`
 - 健康检查 `GET /health`
+- 其它未命中的 `POST` 路径会原样透传到上游 `https://cursor.com/api/chat`
 
 这个项目的核心目标是“让基础纯文本调用可以接入统一上游”，不是直连官方模型服务，也不是 OpenAI / Claude / Gemini 官方协议的完整实现。所有请求最终都会由浏览器页面转发到固定上游：`https://cursor.com/api/chat`
 
@@ -24,6 +27,7 @@
 - 提供 OpenAI、Claude、Gemini 三套常见文本接口的最小兼容层
 - 支持基础文本场景下的非流式 JSON 和 SSE 流式输出
 - 内置协议转换，自动把上游 SSE 事件映射为目标平台的基础文本格式
+- 支持未命中 `POST` 路由的原始透传，直接回传上游状态码、响应头和响应体
 - 通过浏览器桥接模式，复用 `cursor.com/cn/help` 页面中的登录态与人机验证状态
 - 统一彩色日志，便于查看转换前后请求与响应
 - 已接入 `@antfu/eslint-config`
@@ -121,6 +125,34 @@ GET /health
 {
   "ok": true
 }
+```
+
+### Raw Pass-through
+
+除已显式注册的兼容接口外，其它未命中的 `POST` 路径都会直接代理到固定上游：
+
+```bash
+https://cursor.com/api/chat
+```
+
+行为说明：
+
+- 请求体按原始字节转发，不做协议转换
+- 请求头尽量透传，但会过滤 `host`、`content-length`、`connection` 等连接级头
+- 上游返回的状态码、响应头、响应体会直接回给调用方
+- 仅 `POST` 方法会走该兜底透传；其它方法保持原有行为
+
+示例：
+
+```bash
+curl http://localhost:3000/anything-you-want \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "openai/gpt-5.1-codex-mini",
+    "messages": [
+      { "role": "user", "parts": [{ "type": "text", "text": "hello" }] }
+    ]
+  }'
 ```
 
 ### OpenAI Chat Completions

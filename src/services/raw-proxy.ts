@@ -3,9 +3,8 @@ import type { Buffer } from 'node:buffer'
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
+import { DEFAULT_UPSTREAM_URL } from '../utils/constants.js'
 import { browserBridgeService } from './browser-bridge.js'
-
-const DEFAULT_UPSTREAM_URL = 'https://cursor.com/api/chat'
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',

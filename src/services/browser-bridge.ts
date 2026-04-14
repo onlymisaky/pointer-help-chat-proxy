@@ -247,15 +247,6 @@ export class BrowserBridgeService {
       return
     }
 
-    if (!message.pageUrl.startsWith('https://cursor.com/')) {
-      socket.send(JSON.stringify({
-        type: 'error',
-        message: 'invalid bridge page url',
-      }))
-      socket.close(1008, 'invalid bridge page url')
-      return
-    }
-
     this.activeSocket = socket
     socket.send(JSON.stringify({
       type: 'hello_ack',

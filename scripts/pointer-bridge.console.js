@@ -131,7 +131,6 @@
       sendMessage({
         type: 'hello',
         token: BRIDGE_TOKEN,
-        pageUrl: window.location.href,
       })
     })
 

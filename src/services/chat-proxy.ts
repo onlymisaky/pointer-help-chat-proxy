@@ -4,6 +4,7 @@ import type {
   SupportedUpstreamModel,
   UpstreamResult,
 } from '../types/common.js'
+import { DEFAULT_UPSTREAM_URL } from '../utils/constants.js'
 import { logRequestAfter, logResponseBefore } from '../utils/log.js'
 import { latestUserText } from '../utils/message.js'
 import { injectPrompt } from '../utils/prompt.js'
@@ -26,7 +27,6 @@ const DEFAULT_CONTEXT: ProxyPayload['context'] = [
 const OPENAI_MODEL_RE = /openai|gpt|codex/
 const CLAUDE_MODEL_RE = /anthropic|claude|opus/
 const GEMINI_MODEL_RE = /google|gemini/
-const DEFAULT_UPSTREAM_URL = 'https://cursor.com/api/chat'
 
 function buildProxyHeaders() {
   return {

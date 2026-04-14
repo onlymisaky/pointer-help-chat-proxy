@@ -134,7 +134,6 @@ export interface UpstreamResult {
 export interface BridgeClientHello {
   type: 'hello'
   token: string
-  pageUrl: string
 }
 
 export interface BridgeProxyRequest {

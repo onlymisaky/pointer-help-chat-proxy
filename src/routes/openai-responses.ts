@@ -55,6 +55,7 @@ function parseOpenAIResponsesBody(
     inputText: latestUserText(messages),
     requestId: randomUUID(),
     headers: headers as Record<string, string>,
+    injectSystemPrompt: payload.injectSystemPrompt,
   }
 }
 

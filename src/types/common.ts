@@ -1,5 +1,13 @@
 export type JsonRecord = Record<string, unknown>
 
+/**
+ * 是否强制注入系统提示词，以绕 cursor 对模型的默认限制
+ * force: 始终强制注入在头部
+ * fill: 如果 messages 中没有 assistant 或 system 消息，则注入系统提示词
+ * false: 不注入系统提示词
+ */
+export type InjectSystemPromptType = 'force' | 'fill' | false | undefined
+
 export type ParsedRequest
   = | {
     error: string
@@ -13,6 +21,7 @@ export type ParsedRequest
     inputText: string
     requestId: string
     headers: Record<string, string>
+    injectSystemPrompt: InjectSystemPromptType
   }
 
 export type SupportedUpstreamModel
@@ -32,12 +41,14 @@ export interface OpenAIChatRequest {
   model?: string
   messages?: ChatMessage[]
   stream?: boolean
+  injectSystemPrompt?: InjectSystemPromptType
 }
 
 export interface OpenAIResponseRequest {
   model?: string
   input?: unknown
   stream?: boolean
+  injectSystemPrompt?: InjectSystemPromptType
 }
 
 export interface ClaudeRequest {
@@ -45,6 +56,7 @@ export interface ClaudeRequest {
   messages?: ChatMessage[]
   system?: unknown
   stream?: boolean
+  injectSystemPrompt?: InjectSystemPromptType
 }
 
 export interface GeminiTextPart {
@@ -59,6 +71,7 @@ export interface GeminiContent {
 export interface GeminiRequest {
   contents?: GeminiContent[]
   systemInstruction?: unknown
+  injectSystemPrompt?: InjectSystemPromptType
 }
 
 export interface GeminiRouteParams {

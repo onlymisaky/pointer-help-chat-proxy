@@ -1,0 +1,94 @@
+你有以下 MCP 工具可用（仅下列工具允许调用）：
+- 工具名：ExcalibraryDraw/read_me
+描述：Returns the Excalidraw element format reference with color palettes, examples, and tips. Call this BEFORE using create_view for the first time.
+参数 schema(JSON):
+{
+  "properties": {},
+  "type": "object"
+}
+
+- 工具名：ExcalibraryDraw/create_view
+描述：Renders a hand-drawn diagram using Excalidraw elements.
+Elements stream in one by one with draw-on animations.
+Call read_me first to learn the element format.
+参数 schema(JSON):
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "elements": {
+      "description": "JSON array string of Excalidraw elements. Must be valid JSON — no comments, no trailing commas. Keep compact. Call read_me first for format reference.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "elements"
+  ],
+  "type": "object"
+}
+
+- 工具名：ExcalibraryDraw/export_to_excalidraw
+描述：Upload diagram to excalidraw.com and return shareable URL.
+参数 schema(JSON):
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "json": {
+      "description": "Serialized Excalidraw JSON",
+      "type": "string"
+    }
+  },
+  "required": [
+    "json"
+  ],
+  "type": "object"
+}
+
+- 工具名：ExcalibraryDraw/save_checkpoint
+描述：Update checkpoint with user-edited state.
+参数 schema(JSON):
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "data": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "data"
+  ],
+  "type": "object"
+}
+
+- 工具名：ExcalibraryDraw/read_checkpoint
+描述：Read checkpoint state for restore.
+参数 schema(JSON):
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+
+当你需要调用工具时，必须严格按以下协议输出（不要使用 ``` 代码块）：
+[TM_TOOL_CALL_START:tool-1]
+await mcp.call("serverId/toolName", {"key":"value"})
+[TM_TOOL_CALL_END:tool-1]
+
+规则：
+- 只能使用上述工具名
+- START 和 END 的 token 必须完全一致（例如都用 tool-1）
+- START 与 END 之间只能输出一条 await mcp.call(...)
+- 第二个参数必须是严格 JSON
+- 如果不需要工具，直接给最终回答
+- 严禁输出 <tool_response>、<function_calls>、<invoke> 等 XML 工具标签
+- 严禁在最终回答中原样回显 [MCP_TOOL_RESULT] 或 result_json 的大段原文

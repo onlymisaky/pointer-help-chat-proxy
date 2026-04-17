@@ -73,6 +73,7 @@ function parseClaudeBody(body: unknown, headers: unknown): ParsedRequest {
     inputText: latestUserText(messages),
     requestId: randomUUID(),
     headers: headers as Record<string, string>,
+    injectSystemPrompt: payload.injectSystemPrompt,
   }
 }
 

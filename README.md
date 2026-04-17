@@ -364,18 +364,20 @@ src/
 ## 已知限制
 
 - 当前只支持文本主路径，不是完整官方 API 的全量实现
+- 所有兼容接口都支持可选字段 `injectSystemPrompt`，用于控制是否注入内部 `system` 提示词以绕过上游默认限制。
+  - `force`：始终在统一消息流头部插入一条内部 `system` 提示词
+  - `fill`：仅当统一消息流中不存在 `system` 或 `assistant` 消息时插入
+  - `false` 或不传：不插入
 - OpenAI `POST /v1/chat/completions`
   - 只覆盖基础文本对话子集，不是 Chat Completions 官方协议的完整实现
   - `messages[].content` 只按可归一化为文本的内容处理；图片、音频、工具调用等非文本结构不保证兼容
   - `messages[].role` 统一只保留 `system`、`assistant`、`user`；其它 role 会转换为 `user`
-  - 当输入消息里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
   - 流式输出只覆盖基础文本增量，不保证与官方 SSE 事件序列和字段完全一致
   - 返回体和错误对象为兼容层最小实现，不保证满足严格依赖官方 schema 的客户端
 - OpenAI `POST /v1/responses`
   - 只覆盖基础文本输入输出子集，不是 Responses 官方协议的完整实现
   - `input` 只支持字符串或可提取为文本的简单消息结构；非文本输入、工具调用、多模态相关结构不保证兼容
   - 输入消息中的 role 统一只保留 `system`、`assistant`、`user`；其它 role 会转换为 `user`
-  - 当输入消息里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
   - SSE 流只实现最小文本事件子集，不保证包含官方完整事件序列、状态字段和全部输出类型
   - 返回体和错误对象为兼容层最小实现，不保证满足严格依赖官方 schema 的客户端
 - Claude `POST /v1/messages`
@@ -383,14 +385,12 @@ src/
   - 顶层 `system` 会被提取为统一消息流中的 `system` 消息；这里不会完整保留 Claude 官方 system 指令语义
   - `messages[].content` 只按可归一化为文本的内容处理；非文本内容块不保证兼容
   - `messages[].role` 统一只保留 `system`、`assistant`、`user`；除这三种外的其它 role 会转换为 `user`
-  - 当统一消息流里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
   - 流式输出仅适用于基础文本增量展示，不保证与 Claude 官方 SSE 事件序列和全部字段完全一致
 - Gemini `POST /v1beta/models/:model:generateContent`
   - 只覆盖基础文本非流式调用，不是 Gemini 官方 API 的完整实现
   - 仅支持文本 `parts`；`contents[].parts` 中非文本内容不保证兼容
   - `contents[].role` 中 `model` 和 `assistant` 会统一映射为 `assistant`，`system` 保留为 `system`，其它 role 会转换为 `user`
   - `systemInstruction` 会被提取为统一消息流中的 `system` 消息；这里不会完整保留 Gemini 官方 system 指令语义
-  - 当统一消息流里既没有 `system` 也没有 `assistant` 时，代理会自动在最前面注入一条内部 `system` 提示词
   - `generationConfig` 当前不会参与上游请求构造，可视为暂不支持
   - 返回体只覆盖 `candidates` / `usageMetadata` 的基础字段，不保证满足严格 schema 校验客户端的全部要求
 - Gemini `POST /v1beta/models/:model:streamGenerateContent`
